@@ -1,111 +1,98 @@
 # coding = utf-8
+
 import os
-from datetime import datetime
 
 import requests
-from bs4 import BeautifulSoup
 from lxml import etree
 from tqdm import tqdm
+import json
 
 
-def get_urls(page_sum=30):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_0) AppleWebKit/535.11 (KHTML, like Gecko) '
-                      'Chrome/17.0.963.56 Safari/535.11'}
-
-    urlSet = set()
-    print('get the urls!')
-    for page_id in tqdm(range(1, page_sum + 1)):
-        response = requests.get('http://www.doutula.com/article/list/?page=' + str(page_id), headers=headers)
-        bsObj = BeautifulSoup(response.text, 'lxml')
-        for url in bsObj.find_all('a', class_='list-group-item'):
-            if 'href' in url.attrs:
-                urlSet.add(url.attrs['href'])
-
-    urls = prepare_urls(urlSet)
-    with open('urls.txt', 'w+') as out_f:
-        for each_url in urls:
-            out_f.write(str(each_url) + '\n')
-    return urls
+def get_settings():
+    with open('settings.json', 'r') as f:
+        return json.load(f)
 
 
-def prepare_urls(urlSet):
-    doneList = list()
-    doneSet_file_path = 'doneSet.txt'
-    if os.path.isfile(doneSet_file_path):
-        with open(doneSet_file_path, 'r') as f:
-            for line in f.readlines():
-                doneList.append(line)
-    doneSet = set(doneList)
-    return urlSet - doneSet
+class ImgCrawler:
+    def __init__(self):
+        settings = get_settings()
+        self.headers = settings['headers']
+        self.pages_dir = settings['page_dir']
+        self.base_url = settings['base_url']
+        self.img_dir = settings['img_dir']
+        self.json_dir = settings['img_json']
 
+    def searchs(self, key_words, save_page=True, regrab=False, save_img=True, save_json=True):
+        """
+        Get multiple keyword images
+        :param key_words:
+        :param save_page:
+        :param regrab:
+        :param save_img:
+        :param save_json:
+        :return:
+        """
+        for each_k in key_words:
+            self.search(each_k, save_page, regrab, save_img, save_json)
 
-def get_imgs(urlSet=None):
-    urls_file = 'urls.txt'
-    if urlSet is None:
-        urlSet = set()
-        with open(urls_file, 'r') as f:
-            for line in f.readlines():
-                urlSet.add(line)
-    print('get the imgs!')
-    for link in tqdm(urlSet):
-        response = requests.get(link, headers=headers)
-        bsObj = BeautifulSoup(response.text, 'lxml')
-        tree = etree.HTML(bsObj)
-        print(tree)
+    def search(self, keyword, save_page=True, regrab=False, save_img=True, save_json=True):
+        save_page_path = os.path.join(self.pages_dir, keyword + '.html')
+        if not regrab and os.path.exists(save_page_path):
+            print('From html saved file...')
+            with open(save_page_path, 'r') as html_p:
+                html_content = html_p.read()
+        else:
+            response = requests.get(self.base_url + keyword, headers=self.headers)
+            html_content = response.text
+            if save_page:
+                self.save_page_html(keyword, html_content)
 
-    # if len(tree.h3.a.text) > 0:
-    #     dirName = tree.h3.a.text.replace('/', '')
-    # else:
-    #     dirName = link.split('/')[-1] + '-noname'
+        img_json = {
+            'key_word': keyword,
+            'imgs': []
+        }
+        page_selector = etree.HTML(html_content)
+        imgs = page_selector.xpath('//*[@id="search-result-page"]/div/div/div[2]/div/div[1]/div[1]/div/a')
 
-    # if os.path.isdir(dirName):
-    #     pass
-    # else:
-    #     os.mkdir(dirName)
+        print('Getting: ', keyword)
+        for i, img_selector in enumerate(tqdm(imgs)):
+            img_bk_url = img_selector.xpath('./img/@data-backup')[0]
+            img_ori_url = img_selector.xpath('./img/@data-original')[0]
+            img_name = img_selector.xpath('./p/text()')[0] + "--" + str(i)
+            if save_img:
+                self.save_image(img_ori_url, img_name, keyword)
+            img_json['imgs'].append({
+                'img_name': img_name,
+                'bk_url': img_bk_url,
+                'ori_url': img_ori_url
+            })
+        if save_json:
+            save_json_path = os.path.join(self.json_dir, keyword + '.json')
+            if not os.path.exists(self.json_dir):
+                os.makedirs(self.json_dir)
+            with open(save_json_path, 'w+') as json_f:
+                json_f.write(json.dumps(img_json))
+        return img_json
 
-    # os.chdir(dirName)
+    def save_page_html(self, key_word, html_content):
+        if not os.path.exists(self.pages_dir):
+            os.mkdir(self.pages_dir)
+        page_saved_path = os.path.join(self.pages_dir, key_word + '.html')
+        with open(page_saved_path, 'w+') as save_file:
+            save_file.write(html_content)
+        return page_saved_path
 
-    # for l1 in bsObj('td'):
-
-    #     for l2 in l1('img'):
-    #
-
-    #         if len(l2.attrs['src']) > 20 and requests.get(l2.attrs['src']).status_code == 200:
-    #             downUrl = l2.attrs['src']
-    #         elif len(l2.attrs['onerror'].split("'")[-2]) > 20 and requests.get(
-    #                 l2.attrs['onerror'].split("'")[-2]).status_code == 200:
-    #             downUrl = l2.attrs['onerror'].split("'")[-2]
-    #         else:
-    #             continue
-
-
-    #         if downUrl == 'http://img7.doutula.com/production/uploads/image/':
-    #             continue
-    #
-
-
-    #         if 'alt' in l2.attrs:
-    #             if len(l2.attrs['alt']) == 0:
-    #                 with open('noname-' + downUrl.split('/')[-1], 'wb') as f:
-    #                     f.write(requests.get(downUrl).content)
-    #                 f.close()
-    #             else:
-    #                 with open(l2.attrs['alt'].replace('/', '') + '.' + downUrl.split('.')[-1], 'wb') as f:
-    #                     f.write(requests.get(downUrl).content)
-    #                 f.close()
-    #         else:
-    #             with open('noname-' + downUrl.split('/')[-1], 'wb') as f:
-    #                 f.write(requests.get(downUrl).content)
-    #             f.close()
-    #
-    # #            time.sleep(0.5)
-    #
-    # os.chdir('..')
-    # with open('doneSet', 'a') as f:
-    #     f.writelines(link + '\n')
-    # f.close()
+    def save_image(self, url, name, key_word):
+        img_name = name + '.' + url.split('/')[-1].split('.')[-1]
+        img_subdir = os.path.join(self.img_dir, key_word)
+        if not os.path.exists(img_subdir):
+            os.makedirs(img_subdir)
+        img_saved_path = os.path.join(img_subdir, img_name)
+        with open(img_saved_path, 'wb+') as img_f:
+            img_f.write(requests.get(url, self.headers).content)
+        return img_saved_path
 
 
 if __name__ == '__main__':
-    get_imgs(get_urls())
+    imgc = ImgCrawler()
+    imgc.searchs(['!!!', '???'], save_img=True, save_json=True, save_page=True)
