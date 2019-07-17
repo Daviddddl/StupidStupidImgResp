@@ -22,23 +22,24 @@ class ImgCrawler:
         self.img_dir = settings['img_dir']
         self.json_dir = settings['img_json']
 
-    def searchs(self, key_words, save_page=True, regrab=False, save_img=True, save_json=True):
+    def searchs(self, key_words, p_num=10, save_page=True, regrab=False, save_img=True, save_json=True):
         """
-        Get multiple keyword images
+
         :param key_words:
+        :param p_num:
         :param save_page:
         :param regrab:
         :param save_img:
         :param save_json:
         :return:
         """
-        for each_k in key_words:
-            self.search(each_k, save_page, regrab, save_img, save_json)
+        for each_k in tqdm(key_words):
+            self.search(each_k, p_num, save_page, regrab, save_img, save_json)
 
-    def search(self, keyword, save_page=True, regrab=False, save_img=True, save_json=True):
+    def search(self, keyword, p_num=10, save_page=True, regrab=False, save_img=True, save_json=True):
         save_page_path = os.path.join(self.pages_dir, keyword + '.html')
         if not regrab and os.path.exists(save_page_path):
-            print('From html saved file...')
+            # print('From html saved file...')
             with open(save_page_path, 'r') as html_p:
                 html_content = html_p.read()
         else:
@@ -53,19 +54,19 @@ class ImgCrawler:
         }
         page_selector = etree.HTML(html_content)
         imgs = page_selector.xpath('//*[@id="search-result-page"]/div/div/div[2]/div/div[1]/div[1]/div/a')
-
-        print('Getting: ', keyword)
-        for i, img_selector in enumerate(tqdm(imgs)):
-            img_bk_url = img_selector.xpath('./img/@data-backup')[0]
-            img_ori_url = img_selector.xpath('./img/@data-original')[0]
-            img_name = img_selector.xpath('./p/text()')[0] + "--" + str(i)
-            if save_img:
-                self.save_image(img_ori_url, img_name, keyword)
-            img_json['imgs'].append({
-                'img_name': img_name,
-                'bk_url': img_bk_url,
-                'ori_url': img_ori_url
-            })
+        for i, img_selector in enumerate(imgs):
+            if i < p_num:
+                img_bk_url = img_selector.xpath('./img/@data-backup')[0]
+                img_ori_url = img_selector.xpath('./img/@data-original')[0]
+                img_name = img_selector.xpath('./p/text()')[0] + "--" + str(i)
+                img_json['imgs'].append({
+                    'img_name': img_name,
+                    'bk_url': img_bk_url,
+                    'ori_url': img_ori_url
+                })
+                if save_img:
+                    img_path = self.save_image(img_ori_url, img_name, keyword)
+                    img_json['imgs'][-1]['img_path'] = img_path
         if save_json:
             save_json_path = os.path.join(self.json_dir, keyword + '.json')
             if not os.path.exists(self.json_dir):
@@ -95,4 +96,6 @@ class ImgCrawler:
 
 if __name__ == '__main__':
     imgc = ImgCrawler()
-    imgc.searchs(['!!!', '???'], save_img=True, save_json=True, save_page=True)
+    with open('keywords.txt', 'r') as k_f:
+        keywords = k_f.read().splitlines()
+    imgc.searchs(keywords, save_img=True, save_json=True, save_page=True)
